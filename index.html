@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control Gerencial de Cobertura e Inventario</title>
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        promart: {
+                            50: '#fff5ed',
+                            100: '#ffe8d4',
+                            200: '#ffcca8',
+                            300: '#ffa870',
+                            400: '#ff7837',
+                            500: '#f25c05', // Naranja corporativo principal
+                            600: '#e34400',
+                            700: '#bc3102',
+                            800: '#96280a',
+                            900: '#79240c',
+                        },
+                        slatecorp: {
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            950: '#080d1a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- Chart.js Annotation Plugin para dibujar líneas de umbral en la matriz -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    
+    <!-- SheetJS (XLSX) para lectura y exportación real de Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Estilos personalizados para barras de desplazamiento y micro-interacciones */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .dropzone-active {
+            border-color: #f25c05 !important;
+            background-color: #fff5ed !important;
+            transform: scale(1.01);
+        }
+        .tabular-nums {
+            font-variant-numeric: tabular-nums;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased selection:bg-promart-500 selection:text-white">
+
+    <!-- Notificación Toast Flotante (Reemplazo elegante de alert) -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Barra Superior Corporativa -->
+    <header class="bg-slatecorp-900 text-white shadow-lg border-b-4 border-promart-500 sticky top-0 z-40">
+        <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3.5">
+                <div class="bg-promart-500 p-2.5 rounded-xl shadow-md shadow-promart-500/20 flex items-center justify-center">
+                    <i data-lucide="bar-chart-3" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-lg sm:text-xl font-bold tracking-tight text-white">Control de Cobertura e Inventario</h1>
+                        <span class="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-promart-500/20 text-promart-300 border border-promart-500/30">
+                            Gerencia Comercial & Abastecimiento
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-400" id="active-file-subtitle">Sube tu reporte Excel (Detalle_Productos) o carga la muestra para analizar sobrestock</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <button onclick="loadSampleData()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all cursor-pointer shadow-sm">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-promart-400"></i>
+                    <span>Cargar Datos de Muestra</span>
+                </button>
+                <label for="excel-upload-input" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-promart-500 hover:bg-promart-600 text-white transition-all cursor-pointer shadow-md shadow-promart-500/25">
+                    <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+                    <span>Subir Excel (.xlsx)</span>
+                </label>
+                <input type="file" id="excel-upload-input" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileSelect(event)">
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenedor Principal -->
+    <main class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Zona de Carga Inicial (Se muestra destacada si no hay datos o colapsable) -->
+        <section id="upload-hero-section" class="bg-white rounded-2xl border-2 border-dashed border-slate-300 p-8 sm:p-12 text-center transition-all duration-200 shadow-sm">
+            <div class="max-w-xl mx-auto space-y-4">
+                <div class="w-16 h-16 bg-promart-50 text-promart-500 rounded-2xl flex items-center justify-center mx-auto border border-promart-100 shadow-inner">
+                    <i data-lucide="file-spreadsheet" class="w-8 h-8"></i>
+                </div>
+                <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Arrastra y suelta tu archivo Excel aquí</h2>
+                <p class="text-sm text-slate-500 leading-relaxed">
+                    El sistema detectará automáticamente la hoja <strong class="text-slate-700">Detalle_Productos</strong> (o la primera hoja válida) y analizará columnas como <code class="bg-slate-100 px-1.5 py-0.5 rounded text-xs text-slate-700">CobSem</code>, <code class="bg-slate-100 px-1.5 py-0.5 rounded text-xs text-slate-700">Vta Prm Sem Recalc</code>, <code class="bg-slate-100 px-1.5 py-0.5 rounded text-xs text-slate-700">TRANSF</code> y <code class="bg-slate-100 px-1.5 py-0.5 rounded text-xs text-slate-700">OC</code>.
+                </p>
+                <div class="pt-3 flex flex-wrap items-center justify-center gap-3">
+                    <label for="excel-upload-input" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-promart-500 hover:bg-promart-600 text-white transition-all cursor-pointer shadow-md">
+                        <i data-lucide="folder-open" class="w-4 h-4"></i>
+                        Seleccionar Archivo Excel
+                    </label>
+                    <button onclick="loadSampleData()" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white transition-all cursor-pointer shadow-md">
+                        <i data-lucide="play-circle" class="w-4 h-4 text-promart-400"></i>
+                        Probar con Datos de Muestra (404 - Tarapoto)
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Contenido Analítico (Oculto hasta cargar Excel o Muestra) -->
+        <div id="dashboard-content" class="hidden space-y-6">
+
+            <!-- Panel de Configuración de Umbrales de Alerta (Tiempo Real) -->
+            <section class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5">
+                <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div class="flex items-start sm:items-center gap-3">
+                        <div class="p-2.5 bg-amber-50 text-amber-600 rounded-xl border border-amber-200/60 shrink-0">
+                            <i data-lucide="sliders-horizontal" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-sm sm:text-base font-bold text-slate-900">Reglas y Umbrales de Alerta en Tiempo Real</h2>
+                            <p class="text-xs text-slate-500">Ajusta los parámetros para detectar automáticamente productos con exceso de cobertura y baja rotación</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 items-end">
+                        <!-- Umbral Cobertura Alta -->
+                        <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
+                            <label for="threshold-cob" class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                                Cobertura Alta (Semanas ≥)
+                            </label>
+                            <div class="flex items-center gap-2">
+                                <input type="number" id="threshold-cob" value="50" min="1" max="999" step="1" 
+                                    class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-promart-500 focus:border-promart-500 tabular-nums"
+                                    onchange="recalculateDashboard()" onkeyup="recalculateDashboard()">
+                                <span class="text-xs font-medium text-slate-500 shrink-0">sem</span>
+                            </div>
+                        </div>
+
+                        <!-- Umbral Venta Promedio Baja -->
+                        <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
+                            <label for="threshold-vta" class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                                Venta Prom. Baja (Und/Sem ≤)
+                            </label>
+                            <div class="flex items-center gap-2">
+                                <input type="number" id="threshold-vta" value="0.5" min="0" max="500" step="0.1" 
+                                    class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-promart-500 focus:border-promart-500 tabular-nums"
+                                    onchange="recalculateDashboard()" onkeyup="recalculateDashboard()">
+                                <span class="text-xs font-medium text-slate-500 shrink-0">und/s</span>
+                            </div>
+                        </div>
+
+                        <!-- Presets rápidos -->
+                        <div class="flex items-center gap-1.5 justify-start sm:justify-end">
+                            <button onclick="applyPreset(26, 0.5)" class="px-2.5 py-2 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer" title="6 meses cobertura">
+                                26s / 0.5u
+                            </button>
+                            <button onclick="applyPreset(50, 0.5)" class="px-2.5 py-2 rounded-lg text-xs font-semibold bg-promart-50 hover:bg-promart-100 text-promart-700 border border-promart-200 transition cursor-pointer" title="Estándar ~1 año">
+                                50s / 0.5u
+                            </button>
+                            <button onclick="applyPreset(100, 0.3)" class="px-2.5 py-2 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer" title="Casos extremos ~2 años">
+                                100s / 0.3u
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Barra de Filtros Multi-Criterio -->
+            <section class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="filter" class="w-4 h-4 text-promart-500"></i>
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600">Filtros Dinámicos</h3>
+                    </div>
+                    <button onclick="resetFilters()" class="text-xs font-semibold text-promart-600 hover:text-promart-700 flex items-center gap-1 cursor-pointer">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                        Limpiar Filtros
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+                    <!-- Buscador SKU / Descripción -->
+                    <div class="lg:col-span-2 relative">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input type="text" id="filter-search" placeholder="Buscar por SKU o Descripción..." 
+                            class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-promart-500"
+                            oninput="applyFilters()">
+                    </div>
+
+                    <!-- Filtro Tienda -->
+                    <div>
+                        <select id="filter-tienda" onchange="applyFilters()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-promart-500">
+                            <option value="ALL">Todas las Tiendas</option>
+                        </select>
+                    </div>
+
+                    <!-- Filtro Área -->
+                    <div>
+                        <select id="filter-area" onchange="applyFilters()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-promart-500">
+                            <option value="ALL">Todas las Áreas</option>
+                        </select>
+                    </div>
+
+                    <!-- Filtro Estado -->
+                    <div>
+                        <select id="filter-estado" onchange="applyFilters()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-promart-500">
+                            <option value="ALL">Todos los Estados</option>
+                        </select>
+                    </div>
+
+                    <!-- Filtro Procedencia -->
+                    <div>
+                        <select id="filter-procedencia" onchange="applyFilters()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-promart-500">
+                            <option value="ALL">Toda Procedencia</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Píldoras de Filtro Rápido por Semáforo de Alerta -->
+                <div class="mt-3.5 pt-3.5 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                    <span class="text-xs font-semibold text-slate-500 mr-1">Semáforo:</span>
+                    <button onclick="setAlertFilter('ALL')" id="pill-ALL" class="alert-pill active-pill px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer bg-slate-900 text-white">
+                        Todos (<span id="count-pill-ALL">0</span>)
+                    </button>
+                    <button onclick="setAlertFilter('CRITICA')" id="pill-CRITICA" class="alert-pill px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer bg-red-50 text-red-700 border border-red-200 hover:bg-red-100">
+                        🔴 Alerta Crítica (<span id="count-pill-CRITICA">0</span>)
+                    </button>
+                    <button onclick="setAlertFilter('PREVENTIVA')" id="pill-PREVENTIVA" class="alert-pill px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
+                        🟠 Preventiva: Cob. Alta + OC/Transf (<span id="count-pill-PREVENTIVA">0</span>)
+                    </button>
+                    <button onclick="setAlertFilter('MODERADA')" id="pill-MODERADA" class="alert-pill px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100">
+                        🟡 Sobrestock Moderado (<span id="count-pill-MODERADA">0</span>)
+                    </button>
+                    <button onclick="setAlertFilter('SALUDABLE')" id="pill-SALUDABLE" class="alert-pill px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">
+                        🟢 Saludable (<span id="count-pill-SALUDABLE">0</span>)
+                    </button>
+                </div>
+            </section>
+
+            <!-- Tarjetas KPI Ejecutivas -->
+            <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                <!-- KPI 1: Total SKUs y Stock -->
+                <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">SKUs Analizados</p>
+                            <h3 class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1 tabular-nums" id="kpi-total-skus">0</h3>
+                        </div>
+                        <div class="p-2.5 bg-slate-100 text-slate-700 rounded-xl">
+                            <i data-lucide="layers" class="w-5 h-5"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <span class="text-slate-500">Stock Físico Total:</span>
+                        <span class="font-bold text-slate-800 tabular-nums" id="kpi-total-stock">0 und</span>
+                    </div>
+                </div>
+
+                <!-- KPI 2: Alerta Crítica (Alta Cobertura + Baja Venta) -->
+                <div class="bg-white rounded-2xl p-5 border-2 border-red-200 shadow-sm flex flex-col justify-between relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-20 h-20 bg-red-500/5 rounded-bl-full pointer-events-none"></div>
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                                <p class="text-xs font-bold uppercase tracking-wider text-red-600">Alerta Crítica Sobrestock</p>
+                            </div>
+                            <div class="flex items-baseline gap-2 mt-1">
+                                <h3 class="text-2xl sm:text-3xl font-extrabold text-red-600 tabular-nums" id="kpi-critica-skus">0</h3>
+                                <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 tabular-nums" id="kpi-critica-pct">0%</span>
+                            </div>
+                        </div>
+                        <div class="p-2.5 bg-red-50 text-red-600 rounded-xl border border-red-100">
+                            <i data-lucide="alert-octagon" class="w-5 h-5"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-red-100 flex items-center justify-between text-xs">
+                        <span class="text-slate-600">Stock Inmovilizado Crítico:</span>
+                        <span class="font-bold text-red-700 tabular-nums" id="kpi-critica-stock">0 und</span>
+                    </div>
+                </div>
+
+                <!-- KPI 3: Riesgo Sobre-abastecimiento (Cob Alta + OC/TRANSF en camino) -->
+                <div class="bg-white rounded-2xl p-5 border border-amber-200 shadow-sm flex flex-col justify-between">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-wider text-amber-600">Cob. Alta + OC / TRANSF</p>
+                            <h3 class="text-2xl sm:text-3xl font-extrabold text-amber-600 mt-1 tabular-nums" id="kpi-preventiva-skus">0</h3>
+                        </div>
+                        <div class="p-2.5 bg-amber-50 text-amber-600 rounded-xl border border-amber-100">
+                            <i data-lucide="truck" class="w-5 h-5"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-amber-100 flex items-center justify-between text-xs">
+                        <span class="text-slate-600">Unidades en Camino (OC+Transf):</span>
+                        <span class="font-bold text-amber-700 tabular-nums" id="kpi-preventiva-transit">0 und</span>
+                    </div>
+                </div>
+
+                <!-- KPI 4: Cobertura Promedio y Venta Semanal -->
+                <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Cobertura Promedio</p>
+                            <div class="flex items-baseline gap-1.5 mt-1">
+                                <h3 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums" id="kpi-avg-cob">0.0</h3>
+                                <span class="text-xs font-semibold text-slate-500">semanas</span>
+                            </div>
+                        </div>
+                        <div class="p-2.5 bg-promart-50 text-promart-600 rounded-xl border border-promart-100">
+                            <i data-lucide="calendar-clock" class="w-5 h-5"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <span class="text-slate-500">Venta Semanal Total:</span>
+                        <span class="font-bold text-promart-600 tabular-nums" id="kpi-total-vta">0.0 und/sem</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Banner Destacado del Caso Extremo Detectado (Similar a la imagen del usuario) -->
+            <section id="extreme-case-banner" class="hidden bg-gradient-to-r from-slatecorp-900 via-slatecorp-800 to-slatecorp-900 text-white rounded-2xl p-4 sm:p-5 shadow-md border border-slate-700 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div class="flex items-start gap-3.5">
+                    <div class="p-2.5 bg-red-500/20 border border-red-500/40 rounded-xl text-red-400 shrink-0 mt-0.5">
+                        <i data-lucide="flame" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-500 text-white">Caso Extremo Detectado</span>
+                            <span class="text-xs text-slate-300 font-mono" id="extreme-sku">SKU: -</span>
+                        </div>
+                        <h4 class="text-sm sm:text-base font-bold text-white mt-1" id="extreme-desc">-</h4>
+                        <p class="text-xs text-slate-300 mt-0.5" id="extreme-details">-</p>
+                    </div>
+                </div>
+                <button onclick="focusExtremeCase()" class="px-4 py-2 rounded-xl bg-promart-500 hover:bg-promart-600 text-white text-xs font-semibold transition shrink-0 cursor-pointer shadow-sm">
+                    Filtrar Casos Críticos
+                </button>
+            </section>
+
+            <!-- Sección de Gráficos Interactivos -->
+            <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                <!-- Gráfico 1: Matriz de Dispersión (Cobertura vs Venta Semanal) -->
+                <div class="lg:col-span-7 bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 flex flex-col">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                        <div>
+                            <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                                Matriz: Cobertura (Semanas) vs. Venta Semanal
+                            </h3>
+                            <p class="text-xs text-slate-500">La zona sombreada roja superior izquierda concentra los SKUs con alta cobertura y baja rotación</p>
+                        </div>
+                        <span class="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 self-start">
+                            Muestra máx. 1,200 puntos visibles
+                        </span>
+                    </div>
+                    <div class="relative flex-1 min-h-[320px] w-full">
+                        <canvas id="scatterChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Gráfico 2: Distribución del Inventario por Estado de Alerta (Dona) -->
+                <div class="lg:col-span-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 flex flex-col">
+                    <div class="mb-4">
+                        <h3 class="text-base font-bold text-slate-900">Distribución de SKUs por Nivel de Alerta</h3>
+                        <p class="text-xs text-slate-500">Proporción de salud de cobertura sobre el universo filtrado</p>
+                    </div>
+                    <div class="relative flex-1 min-h-[260px] w-full flex items-center justify-center">
+                        <canvas id="doughnutChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Gráfico 3: Top Áreas con Mayor Cantidad de SKUs en Alerta Crítica -->
+                <div class="lg:col-span-12 bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                        <div>
+                            <h3 class="text-base font-bold text-slate-900">Top Áreas con Mayor Sobrestock Crítico</h3>
+                            <p class="text-xs text-slate-500">Comparativa de SKUs en Alerta Crítica y Preventiva por Área comercial</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="toggleBarMetric('skus')" id="btn-bar-skus" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white cursor-pointer">Por Cantidad SKUs</button>
+                            <button onclick="toggleBarMetric('stock')" id="btn-bar-stock" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer">Por Unidades en Stock</button>
+                        </div>
+                    </div>
+                    <div class="relative h-[280px] w-full">
+                        <canvas id="areaBarChart"></canvas>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- Tabla Detallada Paginada y Exportable -->
+            <section class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                <!-- Cabecera de Tabla -->
+                <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900">Detalle de Productos y Diagnóstico de Cobertura</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                            Mostrando <span id="table-showing-range" class="font-semibold text-slate-700">0-0</span> de <span id="table-total-count" class="font-semibold text-slate-700">0</span> registros filtrados. Haz clic en los encabezados para ordenar.
+                        </p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2.5">
+                        <button onclick="exportToExcel('CRITICA')" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 transition cursor-pointer">
+                            <i data-lucide="file-warning" class="w-4 h-4"></i>
+                            Exportar Solo Críticos (.xlsx)
+                        </button>
+                        <button onclick="exportToExcel('FILTERED')" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition cursor-pointer shadow-sm">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                            Exportar Vista Actual (.xlsx)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Contenedor Responsivo de Tabla -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50/90 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-600 select-none">
+                                <th class="py-3.5 px-4 cursor-pointer hover:bg-slate-100 transition" onclick="sortTable('sku')">
+                                    <div class="flex items-center gap-1">SKU <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-400"></i></div>
+                                </th>
+                                <th class="py-3.5 px-4 cursor-pointer hover:bg-slate-100 transition min-w-[220px]" onclick="sortTable('descripcion')">
+                                    <div class="flex items-center gap-1">Descripción <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-400"></i></div>
+                                </th>
+                                <th class="py-3.5 px-4 cursor-pointer hover:bg-slate-100 transition" onclick="sortTable('area')">
+                                    <div class="flex items-center gap-1">Área <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-400"></i></div>
+                                </th>
+                                <th class="py-3.5 px-3 cursor-pointer hover:bg-slate-100 transition" onclick="sortTable('estado')">
+                                    <div class="flex items-center gap-1">Estado <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-400"></i></div>
+                                </th>
+                                <th class="py-3.5 px-3 text-right cursor-pointer hover:bg-slate-100 transition" onclick="sortTable('stock')">
+                                    <div class="flex items-center justify-end gap-1">Stock Orig. <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-400"></i></div>
+                                </th>
+                                <th class="py-3.5 px-3 text-right cursor-pointer hover:bg-slate-100 transition" onclick="sortTable('transf')">
+                                    <div class="flex items-center justify-end gap-1">TRANSF <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-400"></i></div>
+                                </th>
+                                <th class="py-3.5 px-3 text-right cursor-pointer hover:bg-slate-100 transition" onclick="sortTable('oc')">
+                                    <div class="flex items-center justify-end gap-1">OC <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-400"></i></div>
+                                </th>
+                                <th class="py-3.5 px-4 text-right cursor-pointer hover:bg-slate-100 transition" onclick="sortTable('vtaSem')">
+                                    <div class="flex items-center justify-end gap-1">Vta Prm Sem <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-400"></i></div>
+                                </th>
+                                <th class="py-3.5 px-4 text-right cursor-pointer hover:bg-slate-100 transition" onclick="sortTable('cobSem')">
+                                    <div class="flex items-center justify-end gap-1 text-promart-600">CobSem <i data-lucide="arrow-up-down" class="w-3 h-3 text-promart-500"></i></div>
+                                </th>
+                                <th class="py-3.5 px-4 text-center cursor-pointer hover:bg-slate-100 transition" onclick="sortTable('alertPriority')">
+                                    <div class="flex items-center justify-center gap-1">Diagnóstico <i data-lucide="arrow-up-down" class="w-3 h-3 text-slate-400"></i></div>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="products-table-body" class="divide-y divide-slate-100 text-xs sm:text-sm">
+                            <!-- Filas generadas dinámicamente por JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Controles de Paginación -->
+                <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div class="flex items-center gap-2 text-xs text-slate-600">
+                        <span>Filas por página:</span>
+                        <select id="page-size-select" onchange="changePageSize()" class="bg-white border border-slate-300 rounded-lg px-2 py-1 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-promart-500">
+                            <option value="15">15</option>
+                            <option value="30" selected>30</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center gap-1.5">
+                        <button onclick="goToPage(1)" id="btn-first-page" class="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+                            <i data-lucide="chevrons-left" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="prevPage()" id="btn-prev-page" class="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+                            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                        </button>
+                        <span class="px-3 py-1 text-xs font-semibold text-slate-700 tabular-nums">
+                            Página <span id="current-page-num">1</span> de <span id="total-pages-num">1</span>
+                        </span>
+                        <button onclick="nextPage()" id="btn-next-page" class="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+                            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="goToLastPage()" id="btn-last-page" class="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+                            <i data-lucide="chevrons-right" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- Footer Corporativo -->
+    <footer class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 text-center text-xs text-slate-400">
+        Herramienta Analítica de Gestión de Inventarios y Cobertura • Procesamiento 100% local y confidencial en tu navegador.
+    </footer>
+
+    <script>
+        // =========================================================================
+        // ESTADO GLOBAL DE LA APLICACIÓN
+        // =========================================================================
+        let rawProducts = [];        // Todos los registros cargados del Excel o Muestra
+        let evaluatedProducts = [];  // Registros con alertas calculadas según umbrales
+        let filteredProducts = [];   // Registros tras aplicar filtros multi-criterio
+        
+        // Estado de filtros
+        let currentAlertFilter = 'ALL';
+        let sortColumn = 'cobSem';
+        let sortDirection = 'desc'; // 'asc' | 'desc'
+        let currentPage = 1;
+        let pageSize = 30;
+        let barChartMetric = 'skus'; // 'skus' | 'stock'
+
+        // Instancias de Chart.js
+        let scatterChartInstance = null;
+        let doughnutChartInstance = null;
+        let areaBarChartInstance = null;
+
+        // Inicializar iconos Lucide al cargar
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            setupDragAndDrop();
+        });
+
+        // =========================================================================
+        // SISTEMA DE NOTIFICACIONES TOAST (SIN ALERT)
+        // =========================================================================
+        function showToast(title, message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const styles = {
+                success: 'bg-slate-900 border-emerald-500 text-white',
+                error: 'bg-red-950 border-red-500 text-white',
+                warning: 'bg-amber-950 border-amber-500 text-white',
+                info: 'bg-slate-900 border-promart-500 text-white'
+            };
+
+            const icons = {
+                success: 'check-circle-2',
+                error: 'alert-circle',
+                warning: 'alert-triangle',
+                info: 'info'
+            };
+
+            toast.className = `pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl border-l-4 shadow-xl max-w-sm transition-all duration-300 transform translate-y-2 opacity-0 ${styles[type] || styles.info}`;
+            toast.innerHTML = `
+                <i data-lucide="${icons[type] || 'info'}" class="w-5 h-5 shrink-0 mt-0.5 text-promart-400"></i>
+                <div class="text-xs">
+                    <p class="font-bold text-sm">${title}</p>
+                    <p class="text-slate-300 mt-0.5">${message}</p>
+                </div>
+            `;
+
+            container.appendChild(toast);
+            lucide.createIcons({ root: toast });
+
+            // Animar entrada
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+
+            // Auto remover
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 4500);
+        }
+
+        // =========================================================================
+        // MANEJO DE DRAG & DROP Y LECTURA DE EXCEL (SHEETJS)
+        // =========================================================================
+        function setupDragAndDrop() {
+            const dropzone = document.getElementById('upload-hero-section');
+            const body = document.body;
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                body.addEventListener(eventName, e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropzone.addEventListener(eventName, () => dropzone.classList.add('dropzone-active'), false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, () => dropzone.classList.remove('dropzone-active'), false);
+            });
+
+            body.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files && files.length > 0) {
+                    processExcelFile(files[0]);
+                }
+            }, false);
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                processExcelFile(file);
+            }
+        }
+
+        function processExcelFile(file) {
+            showToast('Procesando archivo...', `Leyendo "${file.name}". Esto tomará solo un instante.`, 'info');
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+
+                    // Buscar la hoja 'Detalle_Productos' o la primera hoja con encabezados válidos
+                    let targetSheetName = workbook.SheetNames.find(name => 
+                        name.toLowerCase().trim() === 'detalle_productos' || 
+                        name.toLowerCase().includes('detalle')
+                    );
+
+                    if (!targetSheetName) {
+                        targetSheetName = workbook.SheetNames[0];
+                    }
+
+                    const worksheet = workbook.Sheets[targetSheetName];
+                    // Convertir a matriz de arreglos para encontrar la fila exacta de encabezados
+                    const rawMatrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+                    if (!rawMatrix || rawMatrix.length < 2) {
+                        throw new Error('La hoja seleccionada está vacía o no contiene suficientes filas.');
+                    }
+
+                    // Detectar dinámicamente la fila donde está "SKU" o "CobSem"
+                    let headerRowIndex = 0;
+                    for (let i = 0; i < Math.min(15, rawMatrix.length); i++) {
+                        const rowStr = rawMatrix[i].map(cell => String(cell).toLowerCase().trim());
+                        if (rowStr.includes('sku') || rowStr.includes('cobsem') || rowStr.includes('tienda')) {
+                            headerRowIndex = i;
+                            break;
+                        }
+                    }
+
+                    const headers = rawMatrix[headerRowIndex].map(h => String(h).trim());
+                    
+                    // Mapear índices de columnas de forma flexible pero exacta
+                    const colMap = {
+                        region: findColIndex(headers, ['región', 'region']),
+                        tienda: findColIndex(headers, ['tienda']),
+                        sku: findColIndex(headers, ['sku', 'código', 'codigo']),
+                        descripcion: findColIndex(headers, ['descripción', 'descripcion', 'producto']),
+                        area: findColIndex(headers, ['área', 'area', 'departamento']),
+                        estado: findColIndex(headers, ['estado', 'surtido']),
+                        procedencia: findColIndex(headers, ['procedencia', 'origen']),
+                        stock: findColIndex(headers, ['stock origen', 'stock', 'inventario']),
+                        transf: findColIndex(headers, ['transf', 'transferencia', 'tránsito', 'transito']),
+                        oc: findColIndex(headers, ['oc', 'orden de compra']),
+                        vtaSem: findColIndex(headers, ['vta prm sem recalc', 'vta prm sem', 'venta promedio', 'vta sem']),
+                        cobSem: findColIndex(headers, ['cobsem', 'cobertura', 'cob sem'])
+                    };
+
+                    if (colMap.sku === -1 && colMap.cobSem === -1) {
+                        throw new Error('No se encontraron las columnas esperadas (SKU, CobSem, Vta Prm Sem Recalc). Verifica el formato del archivo.');
+                    }
+
+                    const parsedRows = [];
+                    for (let r = headerRowIndex + 1; r < rawMatrix.length; r++) {
+                        const row = rawMatrix[r];
+                        if (!row || row.length === 0) continue;
+
+                        const skuVal = colMap.sku !== -1 ? String(row[colMap.sku] || '').trim() : '';
+                        const descVal = colMap.descripcion !== -1 ? String(row[colMap.descripcion] || '').trim() : '';
+                        
+                        // Omitir filas totalmente vacías o de totales
+                        if (!skuVal && !descVal) continue;
+                        if (skuVal.toLowerCase() === 'total' || descVal.toLowerCase() === 'total general') continue;
+
+                        parsedRows.push({
+                            region: colMap.region !== -1 ? String(row[colMap.region] || 'Sin Región').trim() : 'Sin Región',
+                            tienda: colMap.tienda !== -1 ? String(row[colMap.tienda] || 'Sin Tienda').trim() : 'Sin Tienda',
+                            sku: skuVal || `ROW-${r}`,
+                            descripcion: descVal || 'Producto sin descripción',
+                            area: colMap.area !== -1 ? String(row[colMap.area] || 'Sin Área').trim() : 'Sin Área',
+                            estado: colMap.estado !== -1 ? String(row[colMap.estado] || 'Estándar').trim() : 'Estándar',
+                            procedencia: colMap.procedencia !== -1 ? String(row[colMap.procedencia] || 'N/D').trim().toUpperCase() : 'N/D',
+                            stock: parseNumber(colMap.stock !== -1 ? row[colMap.stock] : 0),
+                            transf: parseNumber(colMap.transf !== -1 ? row[colMap.transf] : 0),
+                            oc: parseNumber(colMap.oc !== -1 ? row[colMap.oc] : 0),
+                            vtaSem: parseNumber(colMap.vtaSem !== -1 ? row[colMap.vtaSem] : 0),
+                            cobSem: parseNumber(colMap.cobSem !== -1 ? row[colMap.cobSem] : 0)
+                        });
+                    }
+
+                    if (parsedRows.length === 0) {
+                        throw new Error('No se encontraron registros de productos válidos en la hoja.');
+                    }
+
+                    rawProducts = parsedRows;
+                    document.getElementById('active-file-subtitle').innerHTML = `Archivo activo: <strong class="text-promart-300">${file.name}</strong> • Hoja: <strong class="text-white">${targetSheetName}</strong> (${rawProducts.length.toLocaleString()} SKUs)`;
+                    
+                    initializeDashboardWithData();
+                    showToast('¡Archivo cargado con éxito!', `Se analizaron ${rawProducts.length.toLocaleString()} productos de "${targetSheetName}".`, 'success');
+
+                } catch (err) {
+                    console.error(err);
+                    showToast('Error al leer Excel', err.message || 'Verifica que el archivo no esté dañado.', 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function findColIndex(headers, possibleNames) {
+            // Búsqueda exacta primero
+            for (const name of possibleNames) {
+                const idx = headers.findIndex(h => h.toLowerCase() === name);
+                if (idx !== -1) return idx;
+            }
+            // Búsqueda parcial después
+            for (const name of possibleNames) {
+                const idx = headers.findIndex(h => h.toLowerCase().includes(name));
+                if (idx !== -1) return idx;
+            }
+            return -1;
+        }
+
+        function parseNumber(val) {
+            if (typeof val === 'number') return isNaN(val) ? 0 : val;
+            if (!val) return 0;
+            const cleaned = String(val).replace(/,/g, '').trim();
+            const num = parseFloat(cleaned);
+            return isNaN(num) ? 0 : num;
+        }
+
+        // =========================================================================
+        // DATOS DE MUESTRA REALISTAS (BASADOS EN 404 - TARAPOTO Y LA CAPTURA)
+        // =========================================================================
+        function loadSampleData() {
+            const areas = ['Construcción', 'Pisos y Revestimientos', 'Pinturas', 'Gasfitería', 'Electricidad', 'Iluminación', 'Herramientas', 'Jardín y Aire Libre', 'Muebles', 'Decoración', 'Organización', 'Baños y Cocinas'];
+            const estados = ['Home', 'Temporada', 'Long Tail', 'AVS', 'FAVS', 'In&Out'];
+            const procedencias = ['NACIONAL', 'IMPORTADO'];
+            const tiendas = ['404 - Tarapoto', '401 - Trujillo', '408 - Piura'];
+            const sampleProductsList = [
+                { sku: '134892', desc: 'PORCELANATO PULIDO MARMOL CARRARA 60X60CM CAJA 1.44M2', area: 'Pisos y Revestimientos', estado: 'Home', proc: 'IMPORTADO', stock: 35, transf: 0, oc: 0, vta: 0.25, cob: 140.0 },
+                { sku: '142910', desc: 'JUEGO DE COMEDOR TERRAZA RATAN SINTETICO 6 SILLAS', area: 'Jardín y Aire Libre', estado: 'Temporada', proc: 'IMPORTADO', stock: 18, transf: 4, oc: 0, vta: 0.15, cob: 120.0 },
+                { sku: '119044', desc: 'LAMPARA COLGANTE INDUSTRIAL VINTAGE 3 LUCES NEGRO', area: 'Iluminación', estado: 'Long Tail', proc: 'IMPORTADO', stock: 24, transf: 0, oc: 6, vta: 0.20, cob: 120.0 },
+                { sku: '158231', desc: 'MEZCLADORA MONOCOMANDO DUCHA TINA CROMO PREMIUM', area: 'Baños y Cocinas', estado: 'AVS', proc: 'NACIONAL', stock: 42, transf: 0, oc: 0, vta: 0.40, cob: 105.0 },
+                { sku: '120987', desc: 'PINTURA ESMALTE SINTETICO BRILLANTE AZUL REY 1 GLN', area: 'Pinturas', estado: 'Home', proc: 'NACIONAL', stock: 56, transf: 12, oc: 0, vta: 0.60, cob: 93.3 },
+                { sku: '167320', desc: 'TALADRO PERCUTOR INALAMBRICO 20V BRUSHLESS + 2 BAT', area: 'Herramientas', estado: 'FAVS', proc: 'IMPORTADO', stock: 19, transf: 0, oc: 0, vta: 0.22, cob: 86.4 },
+                { sku: '104512', desc: 'CEMENTO PORTLAND TIPO I 42.5KG ALTA RESISTENCIA', area: 'Construcción', estado: 'Home', proc: 'NACIONAL', stock: 480, transf: 100, oc: 200, vta: 65.0, cob: 7.4 },
+                { sku: '112398', desc: 'TUBO PVC SAL DESAGUE 4" X 3M PESADO', area: 'Gasfitería', estado: 'Home', proc: 'NACIONAL', stock: 210, transf: 0, oc: 50, vta: 28.5, cob: 7.4 },
+                { sku: '178432', desc: 'ESTANTE METALICO RANURADO 5 NIVELES 180X90X40CM', area: 'Organización', estado: 'Home', proc: 'NACIONAL', stock: 64, transf: 0, oc: 0, vta: 4.2, cob: 15.2 },
+                { sku: '189021', desc: 'ESPEJO DECORATIVO BISELADO MARCO DORADO 80CM', area: 'Decoración', estado: 'In&Out', proc: 'IMPORTADO', stock: 15, transf: 0, oc: 0, vta: 0.18, cob: 83.3 }
+            ];
+
+            const generated = [];
+            // Agregar los casos emblemáticos primero
+            sampleProductsList.forEach(item => {
+                generated.push({
+                    region: 'Oriente / Norte',
+                    tienda: '404 - Tarapoto',
+                    sku: item.sku,
+                    descripcion: item.desc,
+                    area: item.area,
+                    estado: item.estado,
+                    procedencia: item.proc,
+                    stock: item.stock,
+                    transf: item.transf,
+                    oc: item.oc,
+                    vtaSem: item.vta,
+                    cobSem: item.cob
+                });
+            });
+
+            // Generar 490 productos adicionales realistas para simular una tienda completa
+            const prefixes = ['SET', 'KIT', 'PACK', 'CABLE', 'LLAVE', 'VALVULA', 'CERAMICO', 'RODILLO', 'BROCHA', 'SILLA', 'MESA', 'FOCO LED', 'INTERRUPTOR', 'PEGAMENTO', 'SELLADOR', 'MANGUERA'];
+            const adjectives = ['REFORZADO', 'PRO', 'ESTANDAR', 'BLANCO', 'GRIS', 'NEGRO', 'ACERO INOX', '2"', '1/2"', '10M', '5L', 'PREMIUM', 'ECONOMICO'];
+
+            for (let i = 1; i <= 490; i++) {
+                const area = areas[i % areas.length];
+                const estado = estados[i % estados.length];
+                const proc = procedencias[i % 2];
+                const tienda = i < 380 ? '404 - Tarapoto' : tiendas[i % tiendas.length];
+                const sku = String(100000 + i * 17);
+                const desc = `${prefixes[i % prefixes.length]} ${area.toUpperCase()} ${adjectives[(i * 3) % adjectives.length]} MOD-${100 + (i % 89)}`;
+
+                let vta, stock, transf = 0, oc = 0;
+
+                // Simular distintos perfiles de rotación
+                if (i % 9 === 0) {
+                    // Perfil Crítico: Alta cobertura, muy baja venta
+                    vta = parseFloat((0.05 + (i % 45) / 100).toFixed(2));
+                    stock = Math.ceil(vta * (55 + (i % 95)));
+                    if (i % 27 === 0) oc = Math.ceil(2 + (i % 10));
+                } else if (i % 11 === 0) {
+                    // Perfil Sobrestock Moderado / Preventivo
+                    vta = parseFloat((0.6 + (i % 30) / 10).toFixed(2));
+                    stock = Math.ceil(vta * (52 + (i % 40)));
+                    if (i % 22 === 0) transf = Math.ceil(4 + (i % 15));
+                } else {
+                    // Perfil Saludable
+                    vta = parseFloat((0.8 + (i % 150) / 10).toFixed(2));
+                    stock = Math.ceil(vta * (2 + (i % 24)));
+                    if (i % 5 === 0) oc = Math.ceil(vta * 4);
+                }
+
+                const cob = vta > 0 ? parseFloat((stock / vta).toFixed(1)) : (stock > 0 ? 150.0 : 0);
+
+                generated.push({
+                    region: tienda.includes('Tarapoto') ? 'Selva' : 'Norte',
+                    tienda: tienda,
+                    sku: sku,
+                    descripcion: desc,
+                    area: area,
+                    estado: estado,
+                    procedencia: proc,
+                    stock: stock,
+                    transf: transf,
+                    oc: oc,
+                    vtaSem: vta,
+                    cobSem: cob
+                });
+            }
+
+            rawProducts = generated;
+            document.getElementById('active-file-subtitle').innerHTML = `Modo Demostración Activo: <strong class="text-promart-300">Simulación Detalle_Productos</strong> (${rawProducts.length} SKUs incl. caso CobSem 140.0 / Vta 0.25)`;
+            
+            initializeDashboardWithData();
+            showToast('Datos de Muestra Cargados', 'Se cargaron 500 SKUs incluyendo el caso de 140 semanas de cobertura.', 'success');
+        }
+
+        // =========================================================================
+        // INICIALIZACIÓN Y MOTOR DE REGLAS DE ALERTA
+        // =========================================================================
+        function initializeDashboardWithData() {
+            // Mostrar contenedor principal y compactar hero de carga
+            document.getElementById('dashboard-content').classList.remove('hidden');
+            document.getElementById('upload-hero-section').classList.add('hidden');
+
+            populateFilterDropdowns();
+            recalculateDashboard();
+        }
+
+        function populateFilterDropdowns() {
+            const tiendas = [...new Set(rawProducts.map(p => p.tienda))].filter(Boolean).sort();
+            const areas = [...new Set(rawProducts.map(p => p.area))].filter(Boolean).sort();
+            const estados = [...new Set(rawProducts.map(p => p.estado))].filter(Boolean).sort();
+            const procedencias = [...new Set(rawProducts.map(p => p.procedencia))].filter(Boolean).sort();
+
+            fillSelect('filter-tienda', tiendas, 'Todas las Tiendas');
+            fillSelect('filter-area', areas, 'Todas las Áreas');
+            fillSelect('filter-estado', estados, 'Todos los Estados');
+            fillSelect('filter-procedencia', procedencias, 'Toda Procedencia');
+        }
+
+        function fillSelect(id, items, defaultLabel) {
+            const select = document.getElementById(id);
+            select.innerHTML = `<option value="ALL">${defaultLabel}</option>`;
+            items.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item;
+                opt.textContent = item;
+                select.appendChild(opt);
+            });
+        }
+
+        function applyPreset(cob, vta) {
+            document.getElementById('threshold-cob').value = cob;
+            document.getElementById('threshold-vta').value = vta;
+            recalculateDashboard();
+            showToast('Umbrales actualizados', `Cobertura ≥ ${cob} sem y Venta ≤ ${vta} und/sem`, 'info');
+        }
+
+        function recalculateDashboard() {
+            const cobThreshold = parseFloat(document.getElementById('threshold-cob').value) || 50;
+            const vtaThreshold = parseFloat(document.getElementById('threshold-vta').value);
+            const validVtaThreshold = isNaN(vtaThreshold) ? 0.5 : vtaThreshold;
+
+            // Clasificar cada producto según las reglas gerenciales
+            evaluatedProducts = rawProducts.map(p => {
+                const isHighCob = p.cobSem >= cobThreshold;
+                const isLowVta = p.vtaSem <= validVtaThreshold;
+                const hasIncoming = (p.transf > 0 || p.oc > 0);
+
+                let alertType = 'SALUDABLE';
+                let alertLabel = 'Saludable';
+                let alertPriority = 4;
+
+                if (isHighCob && isLowVta) {
+                    alertType = 'CRITICA';
+                    alertLabel = 'Crítica: Alta Cob. + Baja Vta';
+                    alertPriority = 1;
+                } else if (isHighCob && hasIncoming) {
+                    alertType = 'PREVENTIVA';
+                    alertLabel = 'Preventiva: Cob. Alta + OC/Transf';
+                    alertPriority = 2;
+                } else if (isHighCob) {
+                    alertType = 'MODERADA';
+                    alertLabel = 'Sobrestock Moderado';
+                    alertPriority = 3;
+                }
+
+                return {
+                    ...p,
+                    alertType,
+                    alertLabel,
+                    alertPriority
+                };
+            });
+
+            applyFilters();
+        }
+
+        // =========================================================================
+        // FILTRADO MULTI-CRITERIO Y ACTUALIZACIÓN DE VISTAS
+        // =========================================================================
+        function setAlertFilter(type) {
+            currentAlertFilter = type;
+            
+            // Actualizar estilos visuales de píldoras
+            document.querySelectorAll('.alert-pill').forEach(btn => {
+                btn.classList.remove('ring-2', 'ring-offset-1', 'ring-slate-800', 'font-extrabold');
+            });
+            const activeBtn = document.getElementById(`pill-${type}`);
+            if (activeBtn) {
+                activeBtn.classList.add('ring-2', 'ring-offset-1', 'ring-slate-800', 'font-extrabold');
+            }
+
+            applyFilters();
+        }
+
+        function resetFilters() {
+            document.getElementById('filter-search').value = '';
+            document.getElementById('filter-tienda').value = 'ALL';
+            document.getElementById('filter-area').value = 'ALL';
+            document.getElementById('filter-estado').value = 'ALL';
+            document.getElementById('filter-procedencia').value = 'ALL';
+            setAlertFilter('ALL');
+        }
+
+        function applyFilters() {
+            const searchQuery = document.getElementById('filter-search').value.toLowerCase().trim();
+            const tiendaFilter = document.getElementById('filter-tienda').value;
+            const areaFilter = document.getElementById('filter-area').value;
+            const estadoFilter = document.getElementById('filter-estado').value;
+            const procFilter = document.getElementById('filter-procedencia').value;
+
+            // Primero filtramos por dimensiones generales (para contar las píldoras del semáforo correctamente)
+            const baseFiltered = evaluatedProducts.filter(p => {
+                if (tiendaFilter !== 'ALL' && p.tienda !== tiendaFilter) return false;
+                if (areaFilter !== 'ALL' && p.area !== areaFilter) return false;
+                if (estadoFilter !== 'ALL' && p.estado !== estadoFilter) return false;
+                if (procFilter !== 'ALL' && p.procedencia !== procFilter) return false;
+                if (searchQuery && !p.sku.toLowerCase().includes(searchQuery) && !p.descripcion.toLowerCase().includes(searchQuery)) {
+                    return false;
+                }
+                return true;
+            });
+
+            // Actualizar contadores de las píldoras de semáforo
+            const counts = { ALL: baseFiltered.length, CRITICA: 0, PREVENTIVA: 0, MODERADA: 0, SALUDABLE: 0 };
+            baseFiltered.forEach(p => {
+                if (counts[p.alertType] !== undefined) counts[p.alertType]++;
+            });
+
+            document.getElementById('count-pill-ALL').textContent = counts.ALL.toLocaleString();
+            document.getElementById('count-pill-CRITICA').textContent = counts.CRITICA.toLocaleString();
+            document.getElementById('count-pill-PREVENTIVA').textContent = counts.PREVENTIVA.toLocaleString();
+            document.getElementById('count-pill-MODERADA').textContent = counts.MODERADA.toLocaleString();
+            document.getElementById('count-pill-SALUDABLE').textContent = counts.SALUDABLE.toLocaleString();
+
+            // Aplicar filtro de tipo de alerta
+            filteredProducts = currentAlertFilter === 'ALL' 
+                ? baseFiltered 
+                : baseFiltered.filter(p => p.alertType === currentAlertFilter);
+
+            // Ordenar resultados
+            sortFilteredData();
+
+            // Reiniciar paginación a página 1
+            currentPage = 1;
+
+            // Actualizar KPIs, Banner Extremo, Gráficos y Tabla
+            updateKPIs(baseFiltered);
+            updateExtremeBanner(baseFiltered);
+            updateCharts(baseFiltered);
+            renderTable();
+        }
+
+        // =========================================================================
+        // ACTUALIZACIÓN DE TARJETAS KPI Y BANNER EXTREMO
+        // =========================================================================
+        function updateKPIs(dataset) {
+            const totalSkus = dataset.length;
+            let totalStock = 0;
+            let criticaSkus = 0;
+            let criticaStock = 0;
+            let preventivaSkus = 0;
+            let preventivaTransit = 0;
+            let totalVta = 0;
+            let sumCob = 0;
+
+            dataset.forEach(p => {
+                totalStock += p.stock;
+                totalVta += p.vtaSem;
+                sumCob += p.cobSem;
+
+                if (p.alertType === 'CRITICA') {
+                    criticaSkus++;
+                    criticaStock += p.stock;
+                }
+                if (p.alertType === 'PREVENTIVA' || (p.alertType === 'CRITICA' && (p.oc > 0 || p.transf > 0))) {
+                    preventivaSkus++;
+                    preventivaTransit += (p.oc + p.transf);
+                }
+            });
+
+            const criticaPct = totalSkus > 0 ? ((criticaSkus / totalSkus) * 100).toFixed(1) : '0.0';
+            const avgCob = totalSkus > 0 ? (sumCob / totalSkus).toFixed(1) : '0.0';
+
+            document.getElementById('kpi-total-skus').textContent = totalSkus.toLocaleString();
+            document.getElementById('kpi-total-stock').textContent = `${Math.round(totalStock).toLocaleString()} und`;
+            
+            document.getElementById('kpi-critica-skus').textContent = criticaSkus.toLocaleString();
+            document.getElementById('kpi-critica-pct').textContent = `${criticaPct}%`;
+            document.getElementById('kpi-critica-stock').textContent = `${Math.round(criticaStock).toLocaleString()} und`;
+
+            document.getElementById('kpi-preventiva-skus').textContent = preventivaSkus.toLocaleString();
+            document.getElementById('kpi-preventiva-transit').textContent = `${Math.round(preventivaTransit).toLocaleString()} und`;
+
+            document.getElementById('kpi-avg-cob').textContent = avgCob;
+            document.getElementById('kpi-total-vta').textContent = `${totalVta.toLocaleString('es-PE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} und/sem`;
+        }
+
+        function updateExtremeBanner(dataset) {
+            const criticals = dataset.filter(p => p.alertType === 'CRITICA');
+            const banner = document.getElementById('extreme-case-banner');
+
+            if (criticals.length === 0) {
+                banner.classList.add('hidden');
+                return;
+            }
+
+            // Buscar el producto con mayor cobertura dentro de los críticos
+            const worst = criticals.reduce((prev, curr) => (curr.cobSem > prev.cobSem ? curr : prev), criticals[0]);
+
+            banner.classList.remove('hidden');
+            document.getElementById('extreme-sku').textContent = `SKU: ${worst.sku} • ${worst.tienda} • ${worst.area}`;
+            document.getElementById('extreme-desc').textContent = worst.descripcion;
+            document.getElementById('extreme-details').innerHTML = `Cobertura crítica de <strong class="text-red-400">${worst.cobSem.toFixed(1)} semanas</strong> (~${(worst.cobSem / 52).toFixed(1)} años) con una venta promedio de apenas <strong class="text-amber-300">${worst.vtaSem.toFixed(2)} und/sem</strong> y stock físico de <strong>${worst.stock} und</strong>.`;
+        }
+
+        function focusExtremeCase() {
+            setAlertFilter('CRITICA');
+            sortColumn = 'cobSem';
+            sortDirection = 'desc';
+            sortFilteredData();
+            renderTable();
+            document.getElementById('products-table-body').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        // =========================================================================
+        // GRÁFICOS INTERACTIVOS CON CHART.JS
+        // =========================================================================
+        function updateCharts(dataset) {
+            renderScatterChart(dataset);
+            renderDoughnutChart(dataset);
+            renderAreaBarChart(dataset);
+        }
+
+        function renderScatterChart(dataset) {
+            const ctx = document.getElementById('scatterChart').getContext('2d');
+            if (scatterChartInstance) scatterChartInstance.destroy();
+
+            const cobThreshold = parseFloat(document.getElementById('threshold-cob').value) || 50;
+            const vtaThreshold = parseFloat(document.getElementById('threshold-vta').value) || 0.5;
+
+            // Muestreo inteligente para mantener fluidez máxima (priorizando siempre los críticos)
+            const criticos = dataset.filter(p => p.alertType === 'CRITICA').slice(0, 500);
+            const preventivos = dataset.filter(p => p.alertType === 'PREVENTIVA').slice(0, 250);
+            const moderados = dataset.filter(p => p.alertType === 'MODERADA').slice(0, 200);
+            const saludables = dataset.filter(p => p.alertType === 'SALUDABLE').slice(0, 300);
+
+            const mapPoint = p => ({
+                x: p.vtaSem,
+                y: Math.min(p.cobSem, 250), // Tope visual en 250 sem para evitar que un outlier extremo aplaste el gráfico
+                realCob: p.cobSem,
+                sku: p.sku,
+                desc: p.descripcion,
+                stock: p.stock,
+                area: p.area
+            });
+
+            scatterChartInstance = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Alerta Crítica (Cob. Alta + Vta Baja)',
+                            data: criticos.map(mapPoint),
+                            backgroundColor: 'rgba(239, 68, 68, 0.85)',
+                            borderColor: '#b91c1c',
+                            pointRadius: 5,
+                            pointHoverRadius: 7
+                        },
+                        {
+                            label: 'Preventiva (Cob. Alta + OC/Transf)',
+                            data: preventivos.map(mapPoint),
+                            backgroundColor: 'rgba(245, 158, 11, 0.8)',
+                            borderColor: '#b45309',
+                            pointRadius: 4.5,
+                            pointHoverRadius: 6.5
+                        },
+                        {
+                            label: 'Sobrestock Moderado',
+                            data: moderados.map(mapPoint),
+                            backgroundColor: 'rgba(234, 179, 8, 0.65)',
+                            borderColor: '#a16207',
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        },
+                        {
+                            label: 'Saludable',
+                            data: saludables.map(mapPoint),
+                            backgroundColor: 'rgba(16, 185, 129, 0.45)',
+                            borderColor: '#047857',
+                            pointRadius: 3.5,
+                            pointHoverRadius: 5.5
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { usePointStyle: true, boxWidth: 8, font: { family: 'Inter', size: 11 } }
+                        },
+                        tooltip: {
+                            backgroundColor: '#0f172a',
+                            titleFont: { family: 'Inter', size: 12, weight: 'bold' },
+                            bodyFont: { family: 'Inter', size: 11 },
+                            padding: 10,
+                            cornerRadius: 8,
+                            callbacks: {
+                                label: function(context) {
+                                    const pt = context.raw;
+                                    return [
+                                        `SKU: ${pt.sku} (${pt.area})`,
+                                        `${pt.desc.substring(0, 38)}...`,
+                                        `Cobertura: ${pt.realCob.toFixed(1)} sem | Vta: ${pt.x.toFixed(2)} und/s`,
+                                        `Stock Físico: ${pt.stock} und`
+                                    ];
+                                }
+                            }
+                        },
+                        annotation: {
+                            annotations: {
+                                criticalZoneBox: {
+                                    type: 'box',
+                                    xMin: 0,
+                                    xMax: vtaThreshold,
+                                    yMin: cobThreshold,
+                                    yMax: 250,
+                                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                                    borderColor: 'rgba(239, 68, 68, 0.4)',
+                                    borderWidth: 1,
+                                    borderDash: [4, 4]
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'Venta Promedio Semanal (Und/Sem)', font: { family: 'Inter', size: 11, weight: '600' }, color: '#475569' },
+                            min: 0,
+                            grid: { color: '#f1f5f9' }
+                        },
+                        y: {
+                            title: { display: true, text: 'Cobertura en Semanas (CobSem)', font: { family: 'Inter', size: 11, weight: '600' }, color: '#475569' },
+                            min: 0,
+                            grid: { color: '#f1f5f9' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderDoughnutChart(dataset) {
+            const ctx = document.getElementById('doughnutChart').getContext('2d');
+            if (doughnutChartInstance) doughnutChartInstance.destroy();
+
+            let cCrit = 0, cPrev = 0, cMod = 0, cSal = 0;
+            dataset.forEach(p => {
+                if (p.alertType === 'CRITICA') cCrit++;
+                else if (p.alertType === 'PREVENTIVA') cPrev++;
+                else if (p.alertType === 'MODERADA') cMod++;
+                else cSal++;
+            });
+
+            doughnutChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Alerta Crítica', 'Preventiva (OC/Transf)', 'Sobrestock Moderado', 'Saludable'],
+                    datasets: [{
+                        data: [cCrit, cPrev, cMod, cSal],
+                        backgroundColor: ['#ef4444', '#f59e0b', '#eab308', '#10b981'],
+                        borderColor: '#ffffff',
+                        borderWidth: 2,
+                        hoverOffset: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '66%',
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { usePointStyle: true, padding: 14, font: { family: 'Inter', size: 11 } }
+                        },
+                        tooltip: {
+                            backgroundColor: '#0f172a',
+                            padding: 10,
+                            cornerRadius: 8,
+                            callbacks: {
+                                label: function(ctx) {
+                                    const val = ctx.raw;
+                                    const total = dataset.length || 1;
+                                    const pct = ((val / total) * 100).toFixed(1);
+                                    return ` ${ctx.label}: ${val.toLocaleString()} SKUs (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function toggleBarMetric(metric) {
+            barChartMetric = metric;
+            document.getElementById('btn-bar-skus').className = metric === 'skus' 
+                ? 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white cursor-pointer'
+                : 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer';
+            document.getElementById('btn-bar-stock').className = metric === 'stock' 
+                ? 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white cursor-pointer'
+                : 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer';
+            
+            // Re-renderizar solo el gráfico de barras usando la base filtrada actual
+            applyFilters();
+        }
+
+        function renderAreaBarChart(dataset) {
+            const ctx = document.getElementById('areaBarChart').getContext('2d');
+            if (areaBarChartInstance) areaBarChartInstance.destroy();
+
+            const areaMap = {};
+            dataset.forEach(p => {
+                if (!areaMap[p.area]) {
+                    areaMap[p.area] = { critSkus: 0, prevSkus: 0, critStock: 0, prevStock: 0 };
+                }
+                if (p.alertType === 'CRITICA') {
+                    areaMap[p.area].critSkus++;
+                    areaMap[p.area].critStock += p.stock;
+                } else if (p.alertType === 'PREVENTIVA') {
+                    areaMap[p.area].prevSkus++;
+                    areaMap[p.area].prevStock += p.stock;
+                }
+            });
+
+            // Ordenar áreas por impacto crítico descendente y tomar Top 10
+            const sortedAreas = Object.entries(areaMap)
+                .sort((a, b) => {
+                    const valA = barChartMetric === 'skus' ? (a[1].critSkus + a[1].prevSkus) : (a[1].critStock + a[1].prevStock);
+                    const valB = barChartMetric === 'skus' ? (b[1].critSkus + b[1].prevSkus) : (b[1].critStock + b[1].prevStock);
+                    return valB - valA;
+                })
+                .slice(0, 10);
+
+            const labels = sortedAreas.map(entry => entry[0]);
+            const critData = sortedAreas.map(entry => barChartMetric === 'skus' ? entry[1].critSkus : Math.round(entry[1].critStock));
+            const prevData = sortedAreas.map(entry => barChartMetric === 'skus' ? entry[1].prevSkus : Math.round(entry[1].prevStock));
+
+            areaBarChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: barChartMetric === 'skus' ? 'SKUs en Alerta Crítica' : 'Unidades en Alerta Crítica',
+                            data: critData,
+                            backgroundColor: '#ef4444',
+                            borderRadius: 4
+                        },
+                        {
+                            label: barChartMetric === 'skus' ? 'SKUs Preventiva (OC/Transf)' : 'Unidades Preventiva (OC/Transf)',
+                            data: prevData,
+                            backgroundColor: '#f59e0b',
+                            borderRadius: 4
+                        }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { usePointStyle: true, font: { family: 'Inter', size: 11 } }
+                        },
+                        tooltip: {
+                            backgroundColor: '#0f172a',
+                            padding: 10,
+                            cornerRadius: 8
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true,
+                            grid: { color: '#f1f5f9' },
+                            ticks: { font: { family: 'Inter', size: 11 } }
+                        },
+                        y: {
+                            stacked: true,
+                            grid: { display: false },
+                            ticks: { font: { family: 'Inter', size: 11, weight: '600' }, color: '#334155' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // =========================================================================
+        // TABLA PAGINADA, ORDENAMIENTO Y EXPORTACIÓN EXCEL
+        // =========================================================================
+        function sortTable(column) {
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = (column === 'sku' || column === 'descripcion' || column === 'area' || column === 'estado' || column === 'alertPriority') ? 'asc' : 'desc';
+            }
+            sortFilteredData();
+            currentPage = 1;
+            renderTable();
+        }
+
+        function sortFilteredData() {
+            filteredProducts.sort((a, b) => {
+                let valA = a[sortColumn];
+                let valB = b[sortColumn];
+
+                if (typeof valA === 'string') {
+                    valA = valA.toLowerCase();
+                    valB = valB.toLowerCase();
+                    if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                    if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                    return 0;
+                } else {
+                    return sortDirection === 'asc' ? valA - valB : valB - valA;
+                }
+            });
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('products-table-body');
+            const totalItems = filteredProducts.length;
+            const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+            if (currentPage > totalPages) currentPage = totalPages;
+
+            const startIndex = (currentPage - 1) * pageSize;
+            const endIndex = Math.min(startIndex + pageSize, totalItems);
+            const pageSlice = filteredProducts.slice(startIndex, endIndex);
+
+            // Actualizar contadores de paginación
+            document.getElementById('table-showing-range').textContent = totalItems === 0 ? '0-0' : `${(startIndex + 1).toLocaleString()}-${endIndex.toLocaleString()}`;
+            document.getElementById('table-total-count').textContent = totalItems.toLocaleString();
+            document.getElementById('current-page-num').textContent = currentPage.toLocaleString();
+            document.getElementById('total-pages-num').textContent = totalPages.toLocaleString();
+
+            document.getElementById('btn-first-page').disabled = currentPage === 1;
+            document.getElementById('btn-prev-page').disabled = currentPage === 1;
+            document.getElementById('btn-next-page').disabled = currentPage === totalPages;
+            document.getElementById('btn-last-page').disabled = currentPage === totalPages;
+
+            if (pageSlice.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="10" class="py-12 text-center text-slate-400">
+                            No se encontraron productos que coincidan con los filtros actuales.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            const rowsHtml = pageSlice.map(p => {
+                let badgeHtml = '';
+                let rowBg = 'hover:bg-slate-50/90';
+
+                if (p.alertType === 'CRITICA') {
+                    rowBg = 'bg-red-50/35 hover:bg-red-50/70';
+                    badgeHtml = `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-700 border border-red-200 whitespace-nowrap">🔴 Crítica</span>`;
+                } else if (p.alertType === 'PREVENTIVA') {
+                    rowBg = 'bg-amber-50/30 hover:bg-amber-50/60';
+                    badgeHtml = `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap">🟠 Cob+OC/Transf</span>`;
+                } else if (p.alertType === 'MODERADA') {
+                    badgeHtml = `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-yellow-100 text-yellow-800 border border-yellow-200 whitespace-nowrap">🟡 Moderada</span>`;
+                } else {
+                    badgeHtml = `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">🟢 Saludable</span>`;
+                }
+
+                return `
+                    <tr class="${rowBg} transition-colors">
+                        <td class="py-3 px-4 font-mono text-xs font-bold text-slate-800 whitespace-nowrap">${escapeHtml(p.sku)}</td>
+                        <td class="py-3 px-4 text-xs font-medium text-slate-700 max-w-xs truncate" title="${escapeHtml(p.descripcion)}">${escapeHtml(p.descripcion)}</td>
+                        <td class="py-3 px-4 text-xs text-slate-600 whitespace-nowrap">${escapeHtml(p.area)}</td>
+                        <td class="py-3 px-3 text-xs whitespace-nowrap">
+                            <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium text-[11px]">${escapeHtml(p.estado)}</span>
+                        </td>
+                        <td class="py-3 px-3 text-right font-semibold text-slate-800 tabular-nums text-xs">${p.stock.toLocaleString()}</td>
+                        <td class="py-3 px-3 text-right tabular-nums text-xs ${p.transf > 0 ? 'font-bold text-amber-600' : 'text-slate-400'}">${p.transf.toLocaleString()}</td>
+                        <td class="py-3 px-3 text-right tabular-nums text-xs ${p.oc > 0 ? 'font-bold text-amber-600' : 'text-slate-400'}">${p.oc.toLocaleString()}</td>
+                        <td class="py-3 px-4 text-right font-semibold tabular-nums text-xs ${p.vtaSem <= 0.5 ? 'text-red-600' : 'text-slate-700'}">${p.vtaSem.toFixed(2)}</td>
+                        <td class="py-3 px-4 text-right font-extrabold tabular-nums text-xs ${p.cobSem >= 50 ? 'text-red-600' : 'text-slate-900'}">${p.cobSem.toFixed(1)}</td>
+                        <td class="py-3 px-4 text-center">${badgeHtml}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            tbody.innerHTML = rowsHtml;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function changePageSize() {
+            pageSize = parseInt(document.getElementById('page-size-select').value, 10);
+            currentPage = 1;
+            renderTable();
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            renderTable();
+        }
+
+        function prevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                renderTable();
+            }
+        }
+
+        function nextPage() {
+            const totalPages = Math.ceil(filteredProducts.length / pageSize);
+            if (currentPage < totalPages) {
+                currentPage++;
+                renderTable();
+            }
+        }
+
+        function goToLastPage() {
+            currentPage = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+            renderTable();
+        }
+
+        // =========================================================================
+        // EXPORTACIÓN A EXCEL (.XLSX) CON SHEETJS
+        // =========================================================================
+        function exportToExcel(mode) {
+            const dataToExport = mode === 'CRITICA' 
+                ? evaluatedProducts.filter(p => p.alertType === 'CRITICA')
+                : filteredProducts;
+
+            if (dataToExport.length === 0) {
+                showToast('Sin datos para exportar', 'No hay registros en la selección elegida.', 'warning');
+                return;
+            }
+
+            const formattedRows = dataToExport.map(p => ({
+                'Región': p.region,
+                'Tienda': p.tienda,
+                'SKU': p.sku,
+                'Descripción': p.descripcion,
+                'Área': p.area,
+                'Estado': p.estado,
+                'Procedencia': p.procedencia,
+                'Stock Origen': p.stock,
+                'TRANSF': p.transf,
+                'OC': p.oc,
+                'Vta Prm Sem Recalc': p.vtaSem,
+                'CobSem': p.cobSem,
+                'Diagnóstico Alerta': p.alertLabel
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(formattedRows);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, mode === 'CRITICA' ? 'Alertas_Criticas' : 'Reporte_Cobertura');
+
+            const fileName = mode === 'CRITICA' 
+                ? `Alertas_Criticas_Sobrestock_${new Date().toISOString().slice(0,10)}.xlsx`
+                : `Analisis_Cobertura_Filtrado_${new Date().toISOString().slice(0,10)}.xlsx`;
+
+            XLSX.writeFile(workbook, fileName);
+            showToast('Excel Generado', `Se descargó "${fileName}" con ${dataToExport.length.toLocaleString()} registros.`, 'success');
+        }
+    </script>
+</body>
+</html>
